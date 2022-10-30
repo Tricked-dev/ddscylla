@@ -10,10 +10,10 @@ import {
   toDbUser,
 } from "./functions.js";
 import { createTables, DB } from "./database.js";
+import { addCache } from "./addCache.js";
 // TODO(later me or some nerd):
 // - make bigints work with scylla
 // - make a plugin
-// - create functions for transforming channels etc
 // - channel permissions
 // - types? what where are those
 // - make ts ignore usage minimal
@@ -38,7 +38,6 @@ let bot = createBot({
       //@ts-ignore -
       await bot.promiseQueue.complete();
       console.time(`guild-delete-${guild}`);
-      //@ts-ignore -
       DB.deleteFrom("guilds", "*", { id: guild.toString() });
       console.timeEnd(`guild-delete-${guild}`);
     },
@@ -46,11 +45,9 @@ let bot = createBot({
       //@ts-ignore -
       await bot.promiseQueue.complete();
       console.time(`member-remove-${member.id}`);
-      //@ts-ignore -
       DB.deleteFrom("members", "*", {
-        //@ts-ignore -
         id: member.id.toString(),
-        guildId: guildId.toString(),
+        guild_id: guildId.toString(),
       });
       console.timeEnd(`member-remove-${member.id}`);
     },
@@ -67,6 +64,16 @@ let {
 } = bot.transformers;
 
 //@ts-ignore -
+bot.oldTransformers = {
+  message: transformMessage,
+  channel: transformChannel,
+  guild: transformGuild,
+  member: transformMember,
+  user: transformUser,
+  role: transformRole,
+};
+
+//@ts-ignore -
 bot.cache.channels = {
   async get(id) {
     //@ts-ignore -
@@ -81,7 +88,7 @@ bot.cache.channels = {
     });
     return channel;
   },
-  async get_raw(id) {
+  async getRaw(id) {
     //@ts-ignore -
     return await DB.selectOneFrom("channels", "*", { id: id.toString() });
   },
@@ -91,6 +98,34 @@ bot.cache.channels = {
   async delete(id) {
     //@ts-ignore -
     await DB.deleteFrom("channels", "*", { id: id.toString() });
+  },
+};
+//@ts-ignore -
+bot.cache.roles = {
+  async get(id) {
+    //@ts-ignore -
+    let res = await DB.selectOneFrom("roles", "*", { id: id.toString() });
+    if (!res) return;
+    let role = transformRole(bot, {
+      role: res,
+      guildId: res.guild_id as unknown as bigint,
+    });
+    return role;
+  },
+  async getRaw(id) {
+    return await DB.selectOneFrom("roles", "*", { id: id.toString() });
+  },
+  async set(value) {
+    await DB.insertInto("roles", toDbRole(value, value.guild_id));
+  },
+  async delete(id) {
+    await DB.deleteFrom("roles", "*", { id: id.toString() });
+  },
+  async getGuildRoles(guildId) {
+    let res = await DB.selectFrom("roles", "*", {
+      guild_id: guildId.toString(),
+    });
+    return res.map((r) => transformRole(bot, { role: r, guildId }));
   },
 };
 
@@ -228,12 +263,10 @@ bot.transformers.guild = (bot, guild, inserted: boolean) => {
   let batch = DB.batch();
   for (let channel of guild.guild.channels!) {
     channel.a = 1;
-    //@ts-ignore -
     batch.insertInto("channels", toDbChannel(channel, guild.guild.id));
   }
   for (let member of guild.guild.members!) {
     member.a = 1;
-    //@ts-ignore -
     batch.insertInto(
       "members",
       toDbMember(member.user, member.user!.id!, guild.guild.id),
@@ -242,13 +275,11 @@ bot.transformers.guild = (bot, guild, inserted: boolean) => {
 
     member.user.a = 1;
 
-    //@ts-ignore -
     batch.insertInto("users", toDbUser(member.user));
   }
   for (let role of guild.guild.roles!) {
     role.a = 1;
-    //@ts-ignore -
-    batch.insertInto("roles", toDbRole(role));
+    batch.insertInto("roles", toDbRole(role, guild.guild.id));
   }
 
   batch.insertInto("guilds", toDbGuild(guild.guild, guild.shard));
@@ -260,8 +291,13 @@ bot.transformers.guild = (bot, guild, inserted: boolean) => {
 
 (async () => {
   await createTables();
+  addCache(bot);
   //@ts-ignore -
-  bot.cache.channels.get("914295869791162418");
+  let channel = await bot.cache.channels.getAllFromGuild("755166643927122091");
+  console.log(channel);
+  //@ts-ignore -
+  let guild = await bot.cache.guilds.get("755166643927122091");
+  console.log(guild);
 
   await startBot(bot);
 })();

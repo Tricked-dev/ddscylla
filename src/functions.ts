@@ -1,4 +1,13 @@
-export function toDbChannel(channel, guild) {
+import {
+  DiscordChannel,
+  DiscordGuild,
+  DiscordMember,
+  DiscordMessage,
+  DiscordRole,
+  DiscordUser,
+} from "discordeno/types";
+
+export function toDbChannel(channel: DiscordChannel, guild: string) {
   return {
     id: channel.id!,
     name: channel.name,
@@ -12,9 +21,10 @@ export function toDbChannel(channel, guild) {
     parent_id: channel.parent_id,
     last_pin_id: channel.last_message_id,
     guild_id: guild ?? channel.guild_id,
+    type: channel.type,
   };
 }
-export function toDbUser(user) {
+export function toDbUser(user: DiscordUser) {
   return {
     id: user.id,
     username: user.username,
@@ -24,12 +34,19 @@ export function toDbUser(user) {
     system: user.system,
     mfa_enabled: user.mfa_enabled,
     locale: user.locale,
+    flags: user.flags,
+    premium_type: user.premium_type,
+    public_flags: user.public_flags,
     verified: user.verified,
   };
 }
-export function toDbMember(member, userId, guildId) {
+export function toDbMember(
+  member: DiscordMember,
+  userId: string,
+  guildId: string,
+) {
   return {
-    id: member.id ?? userId,
+    id: member.user?.id ?? userId,
     guild_id: guildId,
     nick: member.nick,
     joined_at: member.joined_at,
@@ -40,7 +57,7 @@ export function toDbMember(member, userId, guildId) {
     permissions: member.permissions,
   };
 }
-export function toDbRole(role, guildId) {
+export function toDbRole(role: DiscordRole, guildId: string) {
   return {
     id: role.id!,
     name: role.name,
@@ -50,10 +67,11 @@ export function toDbRole(role, guildId) {
     permissions: role.permissions,
     managed: role.managed,
     mentionable: role.mentionable,
+    // @ts-ignore
     guild_id: guildId ?? role.guild_id,
   };
 }
-export function toDbGuild(guild, shardId) {
+export function toDbGuild(guild: DiscordGuild, shardId: number) {
   return {
     id: guild.id,
     shard: shardId,
@@ -63,7 +81,6 @@ export function toDbGuild(guild, shardId) {
     discovery_splash: guild.discovery_splash,
     owner_id: guild.owner_id,
     permissions: guild.permissions,
-    region: guild.region,
     afk_channel_id: guild.afk_channel_id,
     afk_timeout: guild.afk_timeout,
     widget_enabled: guild.widget_enabled,
@@ -82,7 +99,7 @@ export function toDbGuild(guild, shardId) {
     member_count: guild.member_count,
   };
 }
-export function toDbMessage(message) {
+export function toDbMessage(message: DiscordMessage) {
   return {
     id: message.id,
     channel_id: message.channel_id,
@@ -101,3 +118,20 @@ export function toDbMessage(message) {
     referenced_message: message.referenced_message,
   };
 }
+//Replaces undefined with null https://stackoverflow.com/questions/50374869/generic-way-to-convert-all-instances-of-null-to-undefined-in-typescript
+type TsMagic<T> = T extends undefined ? null
+  : T extends Date ? T
+  : {
+    [K in keyof T]: T[K] extends (infer U)[] ? TsMagic<U>[]
+      : TsMagic<T[K]>;
+  };
+export type DbChannel = TsMagic<
+  ReturnType<typeof toDbChannel>
+>;
+export type DbUser = TsMagic<
+  ReturnType<typeof toDbUser>
+>;
+export type DbMember = TsMagic<ReturnType<typeof toDbMember>>;
+export type DbRole = TsMagic<ReturnType<typeof toDbRole>>;
+export type DbGuild = TsMagic<ReturnType<typeof toDbGuild>>;
+export type DbMessage = TsMagic<ReturnType<typeof toDbMessage>>;

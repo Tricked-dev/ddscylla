@@ -1,6 +1,24 @@
 import { ScylloClient } from "scyllo";
+import {
+  DbChannel,
+  DbGuild,
+  DbMember,
+  DbMessage,
+  DbRole,
+  DbUser,
+} from "./functions";
 
-export const DB = new ScylloClient({
+export const DB = new ScylloClient<
+  //@ts-ignore -
+  {
+    channels: DbChannel;
+    roles: DbRole;
+    members: DbMember;
+    users: DbUser;
+    guilds: DbGuild;
+    messages: DbMessage;
+  }
+>({
   client: {
     contactPoints: ["172.17.0.2:9042"], // Where to access the database
     keyspace: "ddcache", // Default keyspace
@@ -23,8 +41,8 @@ export async function createTables() {
     last_pin_id: { type: "text" },
     guild_id: { type: "text" },
     type: { type: "int" },
-    //@ts-ignore -
   }, "id");
+  await DB.createIndex("channels", "channels_by_guild_id", "guild_id");
 
   await DB.createTable("roles", true, {
     id: { type: "text" },
@@ -36,8 +54,8 @@ export async function createTables() {
     managed: { type: "boolean" },
     mentionable: { type: "boolean" },
     guild_id: { type: "text" },
-    //@ts-ignore -
   }, "id");
+  await DB.createIndex("roles", "roles_by_guild_id", "guild_id");
 
   await DB.createTable("members", true, {
     id: { type: "text" },
@@ -49,8 +67,8 @@ export async function createTables() {
     mute: { type: "boolean" },
     pending: { type: "boolean" },
     permissions: { type: "text" },
-    //@ts-ignore -
   }, ["id", "guild_id"]);
+  await DB.createIndex("members", "members_by_guild_id", "guild_id");
 
   await DB.createTable("users", true, {
     id: { type: "text" },
@@ -62,11 +80,9 @@ export async function createTables() {
     mfa_enabled: { type: "boolean" },
     locale: { type: "text" },
     verified: { type: "boolean" },
-    email: { type: "text" },
     flags: { type: "int" },
     premium_type: { type: "int" },
     public_flags: { type: "int" },
-    //@ts-ignore -
   }, "id");
 
   await DB.createTable("guilds", true, {
@@ -78,7 +94,6 @@ export async function createTables() {
     discovery_splash: { type: "text" },
     owner_id: { type: "text" },
     permissions: { type: "text" },
-    region: { type: "text" },
     afk_channel_id: { type: "text" },
     afk_timeout: { type: "int" },
     widget_enabled: { type: "boolean" },
@@ -95,7 +110,6 @@ export async function createTables() {
     large: { type: "boolean" },
     unavailable: { type: "boolean" },
     member_count: { type: "int" },
-    //@ts-ignore -
   }, "id");
 
   await DB.createTable("messages", true, {
@@ -114,6 +128,8 @@ export async function createTables() {
     message_reference: { type: "text" },
     flags: { type: "int" },
     referenced_message: { type: "text" },
-    //@ts-ignore -
   }, "id");
+  await DB.createIndex("messages", "messages_by_guild_id", "guild_id");
+  await DB.createIndex("messages", "messages_by_channel_id", "channel_id");
+  await DB.createIndex("messages", "messages_by_author_id", "author_id");
 }
