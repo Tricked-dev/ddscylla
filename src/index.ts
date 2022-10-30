@@ -20,8 +20,8 @@ import { addCache } from "./addCache.js";
 
 let bot = createBot({
   token: process.env.TOKEN!,
-  intents: Intents.GuildMessages | Intents.Guilds | Intents.GuildVoiceStates |
-    Intents.GuildMembers | Intents.GuildMessageReactions,
+  intents: Intents.GuildMessages | Intents.Guilds |
+    Intents.GuildMessageReactions,
   events: {
     ready() {
       console.log("Bot is ready!");
@@ -259,7 +259,6 @@ bot.transformers.role = (
 //@ts-ignore -
 bot.transformers.guild = (bot, guild, inserted: boolean) => {
   if (inserted) return transformGuild(bot, guild);
-  console.time(`guild-${guild.guild.id}`);
   let batch = DB.batch();
   for (let channel of guild.guild.channels!) {
     channel.a = 1;
@@ -284,20 +283,23 @@ bot.transformers.guild = (bot, guild, inserted: boolean) => {
 
   batch.insertInto("guilds", toDbGuild(guild.guild, guild.shard));
 
-  bot.promiseQueue.add(batch.execute());
-  console.timeEnd(`guild-${guild.guild.id}`);
+  bot.promiseQueue.add((async () => {
+    console.time(`guild-${guild.guild.id}`);
+    await batch.execute();
+    console.timeEnd(`guild-${guild.guild.id}`);
+  })());
   return transformGuild(bot, guild);
 };
 
 (async () => {
   await createTables();
   addCache(bot);
-  //@ts-ignore -
-  let channel = await bot.cache.channels.getAllFromGuild("755166643927122091");
-  console.log(channel);
-  //@ts-ignore -
-  let guild = await bot.cache.guilds.get("755166643927122091");
-  console.log(guild);
+  // //@ts-ignore -
+  // let channel = await bot.cache.channels.getAllFromGuild("755166643927122091");
+  // console.log(channel);
+  // //@ts-ignore -
+  // let guild = await bot.cache.guilds.get("755166643927122091");
+  // console.log(guild);
 
   await startBot(bot);
 })();

@@ -125,9 +125,7 @@ export async function createTables() {
     pinned: { type: "boolean" },
     webhook_id: { type: "text" },
     type: { type: "int" },
-    message_reference: { type: "text" },
     flags: { type: "int" },
-    referenced_message: { type: "text" },
   }, "id");
   await DB.createIndex("messages", "messages_by_guild_id", "guild_id");
   await DB.createIndex("messages", "messages_by_channel_id", "channel_id");

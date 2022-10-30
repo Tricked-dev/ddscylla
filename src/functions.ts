@@ -20,7 +20,7 @@ export function toDbChannel(channel: DiscordChannel, guild: string) {
     rate_limit_per_user: channel.rate_limit_per_user,
     parent_id: channel.parent_id,
     last_pin_id: channel.last_message_id,
-    guild_id: guild ?? channel.guild_id,
+    guild_id: (guild ?? channel.guild_id).toString(),
     type: channel.type,
   };
 }
@@ -47,7 +47,7 @@ export function toDbMember(
 ) {
   return {
     id: member.user?.id ?? userId,
-    guild_id: guildId,
+    guild_id: guildId.toString(),
     nick: member.nick,
     joined_at: member.joined_at,
     premium_since: member.premium_since,
@@ -68,7 +68,7 @@ export function toDbRole(role: DiscordRole, guildId: string) {
     managed: role.managed,
     mentionable: role.mentionable,
     // @ts-ignore
-    guild_id: guildId ?? role.guild_id,
+    guild_id: (guildId ?? role.guild_id).toString(),
   };
 }
 export function toDbGuild(guild: DiscordGuild, shardId: number) {
@@ -113,9 +113,7 @@ export function toDbMessage(message: DiscordMessage) {
     pinned: message.pinned,
     webhook_id: message.webhook_id,
     type: message.type,
-    message_reference: message.message_reference,
     flags: message.flags,
-    referenced_message: message.referenced_message,
   };
 }
 //Replaces undefined with null https://stackoverflow.com/questions/50374869/generic-way-to-convert-all-instances-of-null-to-undefined-in-typescript
