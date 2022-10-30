@@ -135,8 +135,9 @@ bot.promiseQueue = {
   queue: [],
   add(promise) {
     this.queue.push(promise);
-    if (!this.timeout) {
+    if (!this.timeout || this.queue.length > 100) {
       this.timeout = setTimeout(async () => {
+        if (!this.queue.length) return;
         this.timeout = undefined;
         let promises = this.queue;
 
@@ -254,7 +255,7 @@ bot.transformers.role = (
   );
   console.timeEnd(`role-${payload.role.id}`);
   //@ts-ignore -
-  return transformRole(bot, role, true);
+  return transformRole(bot, payload, true);
 };
 //@ts-ignore -
 bot.transformers.guild = (bot, guild, inserted: boolean) => {
