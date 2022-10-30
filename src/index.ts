@@ -1,125 +1,22 @@
 import { createBot, Intents, startBot } from "discordeno";
 import { ScylloClient } from "scyllo";
 import "dotenv/config";
-
+import {
+  toDbChannel,
+  toDbGuild,
+  toDbMember,
+  toDbMessage,
+  toDbRole,
+  toDbUser,
+} from "./functions.js";
+import { createTables, DB } from "./database.js";
 // TODO(later me or some nerd):
 // - make bigints work with scylla
 // - make a plugin
 // - create functions for transforming channels etc
 // - channel permissions
-
-const DB = new ScylloClient({
-  client: {
-    contactPoints: ["172.17.0.2:9042"], // Where to access the database
-    keyspace: "ddcache", // Default keyspace
-    localDataCenter: "datacenter1",
-  },
-});
-
-DB.createTable("channels", true, {
-  id: { type: "bigint" },
-  name: { type: "text" },
-  position: { type: "int" },
-  topic: { type: "text" },
-  nsfw: { type: "boolean" },
-  lastMessageId: { type: "bigint" },
-  bitrate: { type: "int" },
-  userLimit: { type: "int" },
-  rateLimitPerUser: { type: "int" },
-  parentId: { type: "bigint" },
-  lastPinId: { type: "bigint" },
-  guildId: { type: "bigint" },
-  type: { type: "int" },
-  //@ts-ignore -
-}, "id");
-
-DB.createTable("roles", true, {
-  id: { type: "bigint" },
-  name: { type: "text" },
-  color: { type: "int" },
-  hoist: { type: "boolean" },
-  position: { type: "int" },
-  permissions: { type: "bigint" },
-  managed: { type: "boolean" },
-  mentionable: { type: "boolean" },
-  guildId: { type: "bigint" },
-  //@ts-ignore -
-}, "id");
-
-DB.createTable("members", true, {
-  id: { type: "bigint" },
-  guildId: { type: "bigint" },
-  nick: { type: "text" },
-  joinedAt: { type: "timestamp" },
-  premiumSince: { type: "timestamp" },
-  deaf: { type: "boolean" },
-  mute: { type: "boolean" },
-  pending: { type: "boolean" },
-  permissions: { type: "text" },
-  //@ts-ignore -
-}, ["id", "guildId"]);
-
-DB.createTable("users", true, {
-  id: { type: "bigint" },
-  username: { type: "text" },
-  discriminator: { type: "text" },
-  avatar: { type: "text" },
-  bot: { type: "boolean" },
-  system: { type: "boolean" },
-  mfaEnabled: { type: "boolean" },
-  locale: { type: "text" },
-  verified: { type: "boolean" },
-  email: { type: "text" },
-  flags: { type: "int" },
-  premiumType: { type: "int" },
-  publicFlags: { type: "int" },
-  //@ts-ignore -
-}, "id");
-
-DB.createTable("guilds", true, {
-  id: { type: "bigint" },
-  name: { type: "text" },
-  icon: { type: "text" },
-  splash: { type: "text" },
-  discoverySplash: { type: "text" },
-  ownerId: { type: "bigint" },
-  afkChannelId: { type: "bigint" },
-  afkTimeout: { type: "int" },
-  widgetEnabled: { type: "boolean" },
-  widgetChannelId: { type: "bigint" },
-  verificationLevel: { type: "int" },
-  defaultMessageNotifications: { type: "int" },
-  explicitContentFilter: { type: "int" },
-  mfaLevel: { type: "int" },
-  applicationId: { type: "bigint" },
-  systemChannelId: { type: "bigint" },
-  systemChannelFlags: { type: "int" },
-  rulesChannelId: { type: "bigint" },
-  joinedAt: { type: "timestamp" },
-  large: { type: "boolean" },
-  unavailable: { type: "boolean" },
-  memberCount: { type: "int" },
-  //@ts-ignore -
-}, "id");
-
-DB.createTable("messages", true, {
-  id: { type: "bigint" },
-  channelId: { type: "bigint" },
-  guildId: { type: "bigint" },
-  authorId: { type: "bigint" },
-  content: { type: "text" },
-  timestamp: { type: "timestamp" },
-  editedTimestamp: { type: "timestamp" },
-  tts: { type: "boolean" },
-  mentionEveryone: { type: "boolean" },
-  pinned: { type: "boolean" },
-  webhookId: { type: "bigint" },
-  type: { type: "int" },
-  messageReference: { type: "text" },
-  flags: { type: "int" },
-  referencedMessage: { type: "text" },
-  //@ts-ignore -
-}, "id");
+// - types? what where are those
+// - make ts ignore usage minimal
 
 let bot = createBot({
   token: process.env.TOKEN!,
@@ -172,12 +69,31 @@ let {
 //@ts-ignore -
 bot.cache.channels = {
   async get(id) {
+    //@ts-ignore -
     let res = await DB.selectOneFrom("channels", "*", { id: id.toString() });
     console.log(res);
-    return res;
+    if (!res) return;
+    let channel = transformChannel(bot, {
+      //@ts-ignore -
+      channel: res,
+      //@ts-ignore -
+      guildId: res.guild_id,
+    });
+    return channel;
+  },
+  async get_raw(id) {
+    //@ts-ignore -
+    return await DB.selectOneFrom("channels", "*", { id: id.toString() });
+  },
+  async set(value) {
+    await DB.insertInto("channels", toDbChannel(value, value.guild_id));
+  },
+  async delete(id) {
+    //@ts-ignore -
+    await DB.deleteFrom("channels", "*", { id: id.toString() });
   },
 };
-bot.cache.channels.get("914295869791162418");
+
 // Avoid floating promises
 //@ts-ignore -
 bot.promiseQueue = {
@@ -213,21 +129,10 @@ bot.promiseQueue = {
 bot.transformers.channel = (bot, payload, inserted: boolean) => {
   if (inserted || payload.channel.a) return transformChannel(bot, payload);
   console.time(`channel-${payload.channel.id}`);
-  let chnl = {
-    id: payload.channel.id!,
-    name: payload.channel.name,
-    position: payload.channel.position,
-    topic: payload.channel.topic,
-    nsfw: payload.channel.nsfw,
-    lastMessageId: payload.channel.last_message_id,
-    bitrate: payload.channel.bitrate,
-    userLimit: payload.channel.user_limit,
-    rateLimitPerUser: payload.channel.rate_limit_per_user,
-    parentId: payload.channel.parent_id,
-    lastPinId: payload.channel.last_message_id,
-    guildId: payload.channel.guild_id,
-  };
-  bot.promiseQueue.add(DB.insertInto("channels", chnl));
+
+  bot.promiseQueue.add(
+    DB.insertInto("channels", toDbChannel(payload.channel, payload.guildId)),
+  );
   console.timeEnd(`channel-${payload.channel.id}`);
   //@ts-ignore -
   return transformChannel(bot, payload, true);
@@ -244,7 +149,7 @@ bot.transformers.user = (bot, user, inserted: boolean) => {
     avatar: user.avatar,
     bot: user.bot,
     system: user.system,
-    mfaEnabled: user.mfa_enabled,
+    mfa_enabled: user.mfa_enabled,
     locale: user.locale,
     verified: user.verified,
   };
@@ -261,59 +166,18 @@ bot.transformers.message = (bot, message, inserted: boolean) => {
   console.time(`message-${message.id}`);
   message.a = 1;
   let batch = DB.batch();
-  let msg = {
-    id: message.id,
-    channelId: message.channel_id,
-    guildId: message.guild_id,
-    authorId: message.author.id,
-    content: message.content,
-    timestamp: message.timestamp,
-    editedTimestamp: message.edited_timestamp,
-    tts: message.tts,
-    mentionEveryone: message.mention_everyone,
-    pinned: message.pinned,
-    webhookId: message.webhook_id,
-    type: message.type,
-    messageReference: message.message_reference,
-    flags: message.flags,
-    referencedMessage: message.referenced_message,
-  };
-  //@ts-ignore -
-  batch.insertInto("messages", msg);
+  batch.insertInto("messages", toDbMessage(message));
   if (message.member) {
-    let member = {
-      id: message.author.id,
-      guildId: message.guild_id,
-      nick: message.member.nick,
-      joinedAt: message.member.joined_at,
-      premiumSince: message.member.premium_since,
-      deaf: message.member.deaf,
-      mute: message.member.mute,
-      pending: message.member.pending,
-      permissions: message.member.permissions,
-    };
     message.member.a = 1;
-    //@ts-ignore -
-    batch.insertInto("members", member);
+    batch.insertInto(
+      "members",
+      toDbMember(message.member, message.author_id, message.guild_id),
+    );
   }
-  let user = {
-    id: message.author.id,
-    username: message.author.username,
-    discriminator: message.author.discriminator,
-    avatar: message.author.avatar,
-    bot: message.author.bot,
-    system: message.author.system,
-    mfaEnabled: message.author.mfa_enabled,
-    locale: message.author.locale,
-    verified: message.author.verified,
-    email: message.author.email,
-    flags: message.author.flags,
-    premiumType: message.author.premium_type,
-    publicFlags: message.author.public_flags,
-  };
+
   message.author.a = 1;
-  //@ts-ignore -
-  batch.insertInto("users", user);
+
+  batch.insertInto("users", toDbUser(message.author));
   bot.promiseQueue.add(batch.execute());
   console.timeEnd(`message-${message.id}`);
   return transformMessage(bot, message);
@@ -332,38 +196,9 @@ bot.transformers.member = (
   }
   console.time(`member-${userId}`);
   let batch = DB.batch();
-
-  let mem = {
-    id: userId,
-    guildId: guildId,
-    nick: member.nick,
-    joinedAt: member.joined_at,
-    premiumSince: member.premium_since,
-    deaf: member.deaf,
-    mute: member.mute,
-    pending: member.pending,
-    permissions: member.permissions,
-  };
-  //@ts-ignore -
-  batch.insert("members", mem);
+  batch.insertInto("members", toDbMember(member, userId, guildId));
   if (member.user) {
-    let usr = {
-      id: member.user.id,
-      username: member.user.username,
-      discriminator: member.user.discriminator,
-      avatar: member.user.avatar,
-      bot: member.user.bot,
-      system: member.user.system,
-      mfaEnabled: member.user.mfa_enabled,
-      locale: member.user.locale,
-      verified: member.user.verified,
-      email: member.user.email,
-      flags: member.user.flags,
-      premiumType: member.user.premium_type,
-      publicFlags: member.user.public_flags,
-    };
-    //@ts-ignore -
-    batch.insertInto("users", usr);
+    batch.insertInto("users", toDbUser(member.user));
   }
   bot.promiseQueue.add(batch.execute());
   console.timeEnd(`member-${userId}`);
@@ -378,21 +213,10 @@ bot.transformers.role = (
 ) => {
   if (inserted || payload.role.a) return transformRole(bot, payload);
   console.time(`role-${payload.role.id}`);
-  let batch = DB.batch();
-  let rl = {
-    id: payload.role.id,
-    guildId: payload.role.guildId,
-    name: payload.role.name,
-    color: payload.role.color,
-    hoist: payload.role.hoist,
-    position: payload.role.position,
-    permissions: payload.role.permissions,
-    managed: payload.role.managed,
-    mentionable: payload.role.mentionable,
-  };
-  //@ts-ignore -
-  batch.insertInto("roles", rl);
-  bot.promiseQueue.add(batch.execute());
+
+  bot.promiseQueue.add(
+    DB.insertInto("roles", toDbRole(payload.role, payload.guildId)),
+  );
   console.timeEnd(`role-${payload.role.id}`);
   //@ts-ignore -
   return transformRole(bot, role, true);
@@ -403,111 +227,41 @@ bot.transformers.guild = (bot, guild, inserted: boolean) => {
   console.time(`guild-${guild.guild.id}`);
   let batch = DB.batch();
   for (let channel of guild.guild.channels!) {
-    let chnl = {
-      id: channel.id!,
-      name: channel.name,
-      position: channel.position,
-      topic: channel.topic,
-      nsfw: channel.nsfw,
-      lastMessageId: channel.last_message_id,
-      bitrate: channel.bitrate,
-      userLimit: channel.user_limit,
-      rateLimitPerUser: channel.rate_limit_per_user,
-      parentId: channel.parent_id,
-      lastPinId: channel.last_message_id,
-      guildId: channel.guild_id,
-    };
     channel.a = 1;
     //@ts-ignore -
-    batch.insertInto("channels", chnl);
+    batch.insertInto("channels", toDbChannel(channel, guild.guild.id));
   }
   for (let member of guild.guild.members!) {
-    if (!member.user) continue;
-    let mem = {
-      id: member.user!.id!,
-      guildId: guild.guild.id,
-      nick: member.nick,
-      joinedAt: new Date(member.joined_at),
-      premiumSince: member.premium_since
-        ? new Date(member.premium_since)
-        : undefined,
-      deaf: member.deaf,
-      mute: member.mute,
-      pending: member.pending,
-      permissions: member.permissions,
-    };
     member.a = 1;
+    //@ts-ignore -
+    batch.insertInto(
+      "members",
+      toDbMember(member.user, member.user!.id!, guild.guild.id),
+    );
+    if (!member.user) continue;
+
     member.user.a = 1;
-    //@ts-ignore -
-    batch.insertInto("members", mem);
-
-    let usr = {
-      id: member.user!.id!,
-      username: member.user!.username,
-      discriminator: member.user!.discriminator,
-      avatar: member.user!.avatar,
-      bot: member.user!.bot,
-      system: member.user!.system,
-      mfaEnabled: member.user!.mfa_enabled,
-      locale: member.user!.locale,
-      verified: member.user!.verified,
-      email: member.user!.email,
-      flags: member.user!.flags,
-      premiumType: member.user!.premium_type,
-      publicFlags: member.user!.public_flags,
-    };
 
     //@ts-ignore -
-    batch.insertInto("users", usr);
+    batch.insertInto("users", toDbUser(member.user));
   }
   for (let role of guild.guild.roles!) {
-    let rl = {
-      id: role.id!,
-      name: role.name,
-      color: role.color,
-      hoist: role.hoist,
-      position: role.position,
-      permissions: role.permissions,
-      managed: role.managed,
-      mentionable: role.mentionable,
-      guildId: guild.guild.id,
-    };
     role.a = 1;
     //@ts-ignore -
-    batch.insertInto("roles", rl);
+    batch.insertInto("roles", toDbRole(role));
   }
-  let gld = {
-    id: guild.guild.id,
-    name: guild.guild.name,
-    icon: guild.guild.icon,
-    splash: guild.guild.splash,
-    discoverySplash: guild.guild.discovery_splash,
-    ownerId: guild.guild.owner_id,
-    afkChannelId: guild.guild.afk_channel_id,
-    afkTimeout: guild.guild.afk_timeout,
-    widgetEnabled: guild.guild.widget_enabled,
-    widgetChannelId: guild.guild.widget_channel_id,
-    verificationLevel: guild.guild.verification_level,
-    defaultMessageNotifications: guild.guild.default_message_notifications,
-    explicitContentFilter: guild.guild.explicit_content_filter,
-    mfaLevel: guild.guild.mfa_level,
-    applicationId: guild.guild.application_id,
-    systemChannelId: guild.guild.system_channel_id,
-    systemChannelFlags: guild.guild.system_channel_flags,
-    rulesChannelId: guild.guild.rules_channel_id,
-    joinedAt: guild.guild.joined_at
-      ? new Date(guild.guild.joined_at)
-      : undefined,
-    large: guild.guild.large,
-    unavailable: guild.guild.unavailable,
-    memberCount: guild.guild.member_count,
-  };
-  //@ts-ignore -
-  batch.insertInto("guilds", gld);
+
+  batch.insertInto("guilds", toDbGuild(guild.guild, guild.shard));
 
   bot.promiseQueue.add(batch.execute());
   console.timeEnd(`guild-${guild.guild.id}`);
   return transformGuild(bot, guild);
 };
 
-startBot(bot);
+(async () => {
+  await createTables();
+  //@ts-ignore -
+  bot.cache.channels.get("914295869791162418");
+
+  await startBot(bot);
+})();
