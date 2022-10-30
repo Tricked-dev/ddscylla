@@ -259,6 +259,14 @@ bot.transformers.role = (
 //@ts-ignore -
 bot.transformers.guild = (bot, guild, inserted: boolean) => {
   if (inserted) return transformGuild(bot, guild);
+  if (!guild.guild.channels) guild.guild.channels = [];
+  if (!guild.guild.members) guild.guild.members = [];
+  if (!guild.guild.roles) guild.guild.roles = [];
+  if (!guild.guild.voice_states) guild.guild.voice_states = [];
+  if (!guild.guild.emojis) guild.guild.emojis = [];
+  if (!guild.guild.presences) guild.guild.presences = [];
+  if (!guild.guild.features) guild.guild.features = [];
+
   let batch = DB.batch();
   for (let channel of guild.guild.channels!) {
     channel.a = 1;
