@@ -2,6 +2,12 @@ import { createBot, Intents, startBot } from "discordeno";
 import { ScylloClient } from "scyllo";
 import "dotenv/config";
 
+// TODO(later me or some nerd):
+// - make bigints work with scylla
+// - make a plugin
+// - create functions for transforming channels etc
+// - channel permissions
+
 const DB = new ScylloClient({
   client: {
     contactPoints: ["172.17.0.2:9042"], // Where to access the database
@@ -123,6 +129,34 @@ let bot = createBot({
     ready() {
       console.log("Bot is ready!");
     },
+    async channelDelete(bot, channel) {
+      //@ts-ignore -
+      await bot.promiseQueue.complete();
+      console.time(`channel-delete-${channel.id}`);
+      //@ts-ignore -
+      await DB.deleteFrom("channels", "*", { id: channel.id.toString() });
+      console.timeEnd(`channel-delete-${channel.id}`);
+    },
+    async guildDelete(bot, guild) {
+      //@ts-ignore -
+      await bot.promiseQueue.complete();
+      console.time(`guild-delete-${guild}`);
+      //@ts-ignore -
+      DB.deleteFrom("guilds", "*", { id: guild.toString() });
+      console.timeEnd(`guild-delete-${guild}`);
+    },
+    async guildMemberRemove(bot, member, guildId) {
+      //@ts-ignore -
+      await bot.promiseQueue.complete();
+      console.time(`member-remove-${member.id}`);
+      //@ts-ignore -
+      DB.deleteFrom("members", "*", {
+        //@ts-ignore -
+        id: member.id.toString(),
+        guildId: guildId.toString(),
+      });
+      console.timeEnd(`member-remove-${member.id}`);
+    },
   },
 });
 
@@ -136,7 +170,47 @@ let {
 } = bot.transformers;
 
 //@ts-ignore -
-bot.transformers.channel = async (bot, payload, inserted: boolean) => {
+bot.cache.channels = {
+  async get(id) {
+    let res = await DB.selectOneFrom("channels", "*", { id: id.toString() });
+    console.log(res);
+    return res;
+  },
+};
+bot.cache.channels.get("914295869791162418");
+// Avoid floating promises
+//@ts-ignore -
+bot.promiseQueue = {
+  queue: [],
+  add(promise) {
+    this.queue.push(promise);
+    if (!this.timeout) {
+      this.timeout = setTimeout(async () => {
+        this.timeout = undefined;
+        let promises = this.queue;
+
+        this.queue = [];
+        console.time(`completed ${promises.length} promises`);
+        try {
+          await Promise.all(promises);
+        } catch (error) {
+          console.error(error);
+        }
+        console.timeEnd(`completed ${promises.length} promises`);
+      }, 1000);
+    }
+    return promise;
+  },
+  complete() {
+    let promises = this.queue;
+    this.queue = [];
+    clearTimeout(this.timeout);
+    return Promise.all(promises);
+  },
+};
+
+//@ts-ignore -
+bot.transformers.channel = (bot, payload, inserted: boolean) => {
   if (inserted || payload.channel.a) return transformChannel(bot, payload);
   console.time(`channel-${payload.channel.id}`);
   let chnl = {
@@ -153,16 +227,16 @@ bot.transformers.channel = async (bot, payload, inserted: boolean) => {
     lastPinId: payload.channel.last_message_id,
     guildId: payload.channel.guild_id,
   };
-  await DB.insertInto("channels", chnl);
+  bot.promiseQueue.add(DB.insertInto("channels", chnl));
   console.timeEnd(`channel-${payload.channel.id}`);
   //@ts-ignore -
   return transformChannel(bot, payload, true);
 };
 
 //@ts-ignore -
-bot.transformers.user = async (bot, user, inserted: boolean) => {
+bot.transformers.user = (bot, user, inserted: boolean) => {
   if (inserted || user.a) return transformUser(bot, user);
-  console.time(`user-{user.id}`);
+  console.time(`user-${user.id}`);
   let usr = {
     id: user.id,
     username: user.username,
@@ -175,14 +249,14 @@ bot.transformers.user = async (bot, user, inserted: boolean) => {
     verified: user.verified,
   };
   //@ts-ignore -
-  await DB.insertInto("users", usr);
-  console.timeEnd(`user-{user.id}`);
+  bot.promiseQueue.add(DB.insertInto("users", usr));
+  console.timeEnd(`user-${user.id}`);
   //@ts-ignore -
   return transformUser(bot, user, true);
 };
 
 //@ts-ignore -
-bot.transformers.message = async (bot, message, inserted: boolean) => {
+bot.transformers.message = (bot, message, inserted: boolean) => {
   if (inserted || message.a) return transformMessage(bot, message);
   console.time(`message-${message.id}`);
   message.a = 1;
@@ -240,13 +314,13 @@ bot.transformers.message = async (bot, message, inserted: boolean) => {
   message.author.a = 1;
   //@ts-ignore -
   batch.insertInto("users", user);
-  await batch.execute();
+  bot.promiseQueue.add(batch.execute());
   console.timeEnd(`message-${message.id}`);
   return transformMessage(bot, message);
 };
 
 //@ts-ignore
-bot.transformers.member = async (
+bot.transformers.member = (
   bot,
   member,
   guildId,
@@ -291,13 +365,13 @@ bot.transformers.member = async (
     //@ts-ignore -
     batch.insertInto("users", usr);
   }
-  await batch.execute();
+  bot.promiseQueue.add(batch.execute());
   console.timeEnd(`member-${userId}`);
   //@ts-ignore -
   return transformMember(bot, member, guildId, userId, true);
 };
 //@ts-ignore -
-bot.transformers.role = async (
+bot.transformers.role = (
   bot,
   payload,
   inserted: boolean,
@@ -318,13 +392,13 @@ bot.transformers.role = async (
   };
   //@ts-ignore -
   batch.insertInto("roles", rl);
-  await batch.execute();
+  bot.promiseQueue.add(batch.execute());
   console.timeEnd(`role-${payload.role.id}`);
   //@ts-ignore -
   return transformRole(bot, role, true);
 };
 //@ts-ignore -
-bot.transformers.guild = async (bot, guild, inserted: boolean) => {
+bot.transformers.guild = (bot, guild, inserted: boolean) => {
   if (inserted) return transformGuild(bot, guild);
   console.time(`guild-${guild.guild.id}`);
   let batch = DB.batch();
@@ -431,7 +505,7 @@ bot.transformers.guild = async (bot, guild, inserted: boolean) => {
   //@ts-ignore -
   batch.insertInto("guilds", gld);
 
-  await batch.execute();
+  bot.promiseQueue.add(batch.execute());
   console.timeEnd(`guild-${guild.guild.id}`);
   return transformGuild(bot, guild);
 };
