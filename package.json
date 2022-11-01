@@ -8,8 +8,11 @@
     "build": "swc src --out-dir dist",
     "start": "swc src --out-dir dist && node dist/index.js"
   },
+  "engines": {
+    "pnpm": ">=7.0.0"
+  },
   "author": "",
-  "license": "SEE COPYING.md",
+  "license": "Apache-2.0",
   "dependencies": {
     "discordeno": "^17.1.0",
     "dotenv": "^16.0.3",

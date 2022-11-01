@@ -1,41 +1,38 @@
-import { DB } from "./database.js";
+import { ScylloClient } from "scyllo";
+import type { CacheInterfaces, ScyllaCacheBot } from "./plugin";
 
-export function addCache(bot) {
+export function addCache(
+  bot: ScyllaCacheBot,
+) {
   function getAllTable(table) {
-    return DB.selectFrom(table, "*");
+    return bot.db.selectFrom(table, "*");
   }
   function getAllFromGuild(table, guildId) {
-    //@ts-ignore -
-    return DB.selectFrom(table, "*", { guild_id: guildId.toString() });
+    return bot.db.selectFrom(table, "*", { guild_id: guildId.toString() });
   }
   function getId(table, id) {
-    //@ts-ignore -
-    return DB.selectOneFrom(table, "*", { id: id.toString() });
+    return bot.db.selectOneFrom(table, "*", { id: id.toString() });
   }
   function set(table, value) {
-    return DB.insertInto(table, value);
+    return bot.db.insertInto(table, value);
   }
   function deleteId(table, id) {
-    //@ts-ignore -
-    return DB.deleteFrom(table, "*", { id: id.toString() });
+    return bot.db.deleteFrom(table, "*", { id: id.toString() });
   }
   function deleteAllFromGuild(table, guildId) {
-    //@ts-ignore -
-    return DB.deleteFrom(table, "*", { guild_id: guildId.toString() });
+    return bot.db.deleteFrom(table, "*", { guild_id: guildId.toString() });
   }
   function deleteAll(table) {
-    return DB.truncateTable(table);
+    return bot.db.truncateTable(table);
   }
   function createGuildCache(table, name, transformer) {
     return {
       async get(id) {
-        //@ts-ignore -
         let res = await getId(table, id);
         if (!res) return;
         let role = transformer(bot, {
-          //@ts-ignore -
           [name]: res,
-          //@ts-ignore -
+
           guildId: res.guild_id,
         });
         return role;
@@ -43,7 +40,6 @@ export function addCache(bot) {
       async getAll() {
         let data = await getAllTable(table);
         return data.map((data) =>
-          //@ts-ignore -
           transformer(bot, { [name]: data, guildId: data.guild_id })
         );
       },
@@ -53,7 +49,6 @@ export function addCache(bot) {
       async getAllFromGuild(guildId) {
         let data = await getAllFromGuild(table, guildId);
         return data.map((data) =>
-          //@ts-ignore -
           transformer(bot, { [name]: data, guildId: data.guild_id })
         );
       },
@@ -91,16 +86,19 @@ export function addCache(bot) {
     "message",
     bot.oldTransformers.message,
   );
-  bot.cache.guilds = {
+  const guildCache = {
     async get(id) {
-      //@ts-ignore -
-      let res = await DB.selectOneFrom("guilds", "*", { id: id.toString() });
+      let res = await bot.db.selectOneFrom("guilds", "*", {
+        id: id.toString(),
+      });
       if (!res) return;
-      //@ts-ignore -
+
       res.a = 1;
-      //@ts-ignore -
-      res.features = [];
-      let guild = bot.oldTransformers.guild(bot, { guild: res });
+
+      let guild = bot.transformers.guild(bot, {
+        guild: res,
+        shardId: res.shard,
+      });
       return guild;
     },
     async getAll() {
@@ -120,17 +118,15 @@ export function addCache(bot) {
       return await deleteAll("guilds");
     },
   };
-  bot.cache.members = {
+  const memberCache = {
     async get(id, guildId) {
-      //@ts-ignore -
       let res = await DB.selectOneFrom(
         "members",
         "*",
-        //@ts-ignore -
         { id: id.toString(), guild_id: guildId.toString() },
       );
       if (!res) return;
-      //@ts-ignore -
+
       res.a = 1;
       let member = bot.oldTransformers.member(bot, { member: res });
       return member;
@@ -146,25 +142,22 @@ export function addCache(bot) {
       return await set("members", value);
     },
     async delete(id, guildId) {
-      //@ts-ignore -
-      return DB.deleteFrom(table, "*", {
-        //@ts-ignore -
+      return bot.db.deleteFrom("members", "*", {
         id: id.toString(),
         guild_id: guildId.toString(),
       });
     },
   };
-  bot.cache.users = {
+  const userCache = {
     async get(id) {
-      //@ts-ignore -
-      let res = await DB.selectOneFrom("users", "*", { id: id.toString() });
+      let res = await bot.db.selectOneFrom("users", "*", { id: id.toString() });
       if (!res) return;
-      let user = bot.oldTransformers.user(bot, { user: res });
+      let user = bot.oldTransformers.user(bot, res);
       return user;
     },
     async getAll() {
       let data = await getAllTable("users");
-      return data.map((user) => bot.oldTransformers.user(bot, { user }));
+      return data.map((user) => bot.oldTransformers.user(bot, user));
     },
     async getAllRaw() {
       return await getAllTable("users");
@@ -179,4 +172,27 @@ export function addCache(bot) {
       return await deleteAll("users");
     },
   };
+  bot.cache.users = userCache;
+  bot.cache.members = memberCache;
+  bot.cache.guilds = guildCache;
+  return {
+    createGuildCache,
+    userCache,
+    memberCache,
+    guildCache,
+  };
 }
+export type GuildItemCache = ReturnType<
+  ReturnType<typeof addCache>["createGuildCache"]
+>;
+export type UserCache = ReturnType<typeof addCache>["userCache"];
+export type MemberCache = ReturnType<typeof addCache>["memberCache"];
+export type GuildCache = ReturnType<typeof addCache>["guildCache"];
+export type Cache = {
+  roles: GuildItemCache;
+  channels: GuildItemCache;
+  messages: GuildItemCache;
+  users: UserCache;
+  members: MemberCache;
+  guilds: GuildCache;
+};
